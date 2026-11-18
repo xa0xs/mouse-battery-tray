@@ -1,0 +1,54 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW-w64 and clang
+        run: sudo apt-get update && sudo apt-get install -y g++-mingw-w64-x86-64-posix clang
+
+      - name: Parser tests
+        run: |
+          g++ -std=c++17 -Wall -Wextra tests/parsers_test.cpp -o parsers_test
+          ./parsers_test
+
+      - name: Check the Windhawk mod compiles (clang, as Windhawk does)
+        run: |
+          clang++ --target=x86_64-w64-windows-gnu -fsyntax-only -std=c++20 -Wall \
+            -Wno-unused-parameter -Wno-missing-field-initializers \
+            -DUNICODE -D_UNICODE -include tests/windhawk_api_stub.h \
+            mods/mouse-battery-tray.wh.cpp
+
+      - name: Build the standalone exe
+        run: |
+          mkdir -p dist
+          x86_64-w64-mingw32-g++-posix -std=c++20 -O2 -s -DUNICODE -D_UNICODE \
+            -DMBT_VERSION="L\"${GITHUB_REF_NAME}\"" \
+            -municode -mwindows -static standalone/main.cpp \
+            -o dist/MouseBatteryTray.exe \
+            -lsetupapi -lhid -lgdi32 -lshell32 -ladvapi32 -luser32
+          cp mods/mouse-battery-tray.wh.cpp dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mouse-battery-tray
+          path: dist/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/MouseBatteryTray.exe
+            dist/mouse-battery-tray.wh.cpp
